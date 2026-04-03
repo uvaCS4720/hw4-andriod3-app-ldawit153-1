@@ -1,41 +1,57 @@
 package edu.nd.pmcburne.hello
 
 import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 data class MainUIState(
-    val counterValue: Int
-)
+    val locations: List<LocationEntity> = emptyList(),
+    val selectedTag: String = "core",
+    val isLoading: Boolean = true
+) {
+    val allTags: List<String>
+        get() = locations
+            .flatMap { it.tags.split(",") }
+            .map { it.trim() }
+            .distinct()
+            .sorted()
+
+    val filteredLocations: List<LocationEntity>
+        get() = locations.filter {
+            it.tags.split(",").map { t -> t.trim() }.contains(selectedTag)
+        }
+}
 
 class MainViewModel(
-    val initialCounterValue: Int = 0
+    private val repository: LocationRepository
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(MainUIState(initialCounterValue))
+
+    private val _uiState = MutableStateFlow(MainUIState())
     val uiState: StateFlow<MainUIState> = _uiState.asStateFlow()
 
-    fun incrementCounter() {
-        _uiState.update{ currentState ->
-            currentState.copy(counterValue = _uiState.value.counterValue + 1)
+    init {
+        viewModelScope.launch {
+            repository.syncLocations()
+            val data = repository.getAllLocations()
+
+            _uiState.value = _uiState.value.copy(
+                locations = data,
+                isLoading = false
+            )
         }
     }
 
-    fun decrementCounter() {
-        _uiState.update{ currentState ->
-            currentState.copy(counterValue = _uiState.value.counterValue - 1)
-        }
+    fun updateSelectedTag(tag: String) {
+        _uiState.value = _uiState.value.copy(selectedTag = tag)
     }
+}
 
-    fun resetCounter() {
-        _uiState.update { currentState ->
-            currentState.copy(counterValue = 0)
-        }
+class MainViewModelFactory(
+    private val repository: LocationRepository
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return MainViewModel(repository) as T
     }
-
-    val isDecrementEnabled: Boolean
-        get() = _uiState.value.counterValue > 0
-    val isResetEnabled: Boolean
-        get() = _uiState.value.counterValue > 0
 }
